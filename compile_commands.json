@@ -1,0 +1,18 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/avr-gcc",
+      "-c",
+      "-mmcu=atmega32u4",
+      "-Wall",
+      "-I/usr/avr/include",
+      "-Os",
+      "-o",
+      "build/main.elf",
+      "main.c"
+    ],
+    "directory": "/home/zai/personal/atmega-usb",
+    "file": "/home/zai/personal/atmega-usb/main.c",
+    "output": "/home/zai/personal/atmega-usb/build/main.elf"
+  }
+]
