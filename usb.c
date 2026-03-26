@@ -50,7 +50,8 @@ int usb_init() {
     return 0;
 }
 
-ISR(USB_COM_vect) {
+/* General Interrupt Vector */
+ISR(USB_GEN_vect) {
     // after the end of reset
     // configure EP0
     uint8_t temp_udint = UDINT;
@@ -58,7 +59,7 @@ ISR(USB_COM_vect) {
 
     if(temp_udint & (1 << EORSTI)) {
         // configure ep0
-        UENUM = 0;
+        usb_setendpoint_0(0);
 
         // activating the endpoint
         UECONX |= (1 << EPEN);
@@ -75,4 +76,58 @@ ISR(USB_COM_vect) {
             return;
         }
     }
+}
+
+/* Endpoint 0 Vector */
+ISR(USB_COM_vect) {
+    // Setting Endpoint 0
+    usb_setendpoint_0(0);
+
+    // is setup packet received?
+    if(!usb_setup_packet_recv()) {
+        return;
+    }
+
+    // Read the UEDAT
+    SetupPacket sp;
+    sp.bmRequestType = UEDATX;
+    sp.bRequest = UEDATX;
+   
+    /* packing UEDATX into 16 bit values */
+    sp.wValue = UEDATX;
+    sp.wValue |= UEDATX << 8;
+
+    sp.wIndex = UEDATX;
+    sp.wIndex |= UEDATX << 8;
+
+    sp.wLength = UEDATX;
+    sp.wLength |= UEDATX << 8;
+
+    // Reset SETUP, Received OUT, Transmitter Ready interupts
+    // RXSTPE, RXOUTI, TXINI,
+    UEINTX &= ~(1 << RXSTPE | 1 << RXOUTI | 1 << TXINI);
+
+    // check for standard device request
+    // check for SET_ADDRESS and GET_DESCRIPTOR
+    // is it HOST TO DEVICE
+    // 0000 0000
+    if(sp.bmRequestType == 0x00) {
+       switch(sp.bRequest) {
+            case SET_ADDRESS:
+                // STUB
+            break;
+            case GET_DESCRIPTOR:
+                // STUB
+            break;
+        }
+    }
+}
+
+/* helper funcs */
+void usb_setendpoint_0(uint8_t data) {
+    UENUM = data;
+}
+
+int usb_setup_packet_recv() {
+    return (UEINTX & (1 << RXSTPI));
 }
