@@ -1,9 +1,11 @@
 #include "usb.h"
+#include <avr/io.h>
+#include <avr/pgmspace.h>
 
 /* Global Variables */
 uint8_t dev_config_status;
 
-static const DeviceDesc device_descriptor PROGMEM = {
+const DeviceDesc device_descriptor PROGMEM = {
     .length = 18,
     .type = 1,
     .bcd_usb = 0x0200,
@@ -20,13 +22,33 @@ static const DeviceDesc device_descriptor PROGMEM = {
     .num_configurations = 1
 };
 
+const ConfigDesc config_descriptor PROGMEM = {
+    .len = 9,
+    .dtype = 2,
+    .clen = 0,
+    .num_interfaces = 1,
+    .config = 1,
+    .iconfig = 0,
+    .attributes = 0x80 | 0x20,
+    .max_power = 500/2 
+};
+ 
+
 /* Private Functions */
 static u8 wait_for_in_or_out();
-
+static void wait_in();
+static void clear_in();
+static void stall();
+static i32 send_config_descriptor();
+static int setup_packet_recv();
+static void set_ep(u8 data);
+static void init_ep(u8 data);
+static bool send_descriptor(SetupPacket *sp);
 
 // Steps
 // 1. Enable USB Pad Regulator (for power)
-// 2. Configure PLL interface (Set to 16MHz) 3. Enable PLL
+// 2. Configure PLL interface (Set to 16MHz) 
+// 3. Enable PLL
 // 4. Check PLL Lock
 // 5. Enable USB interface
 // 6. Enable USBE and USB pad
@@ -41,7 +63,9 @@ int usb_init() {
 
     // setting clock source to 16MHz
     // enabling PLL
-    PLLCSR |= (1 << PINDIV | 1 << PLLE);
+    //PLLCSR |= (1 << PINDIV | 1 << PLLE);
+    PLLCSR |= (1 << PINDIV);
+    PLLCSR |= (1 << PLLE);
 
     // Waiting for PLL
     while(!(PLLCSR & (1 << PLOCK)));
@@ -49,17 +73,15 @@ int usb_init() {
     // enabling USBE and usb pad
     USBCON |= (1 << USBE | 1 << OTGPADE);
     
-    // unfreeze the clock
+    // start the usb clock
     USBCON &= ~(1 << FRZCLK);
 
-    // set speed = Full Speed
-    UDCON &= ~(1 << LSM);
+    // Enabling speed, enabling the attach pull-ups
+    UDCON &= ~((1 << LSM) | (1 << DETACH) | (1 << RSTCPU) | (1 << RMWKUP));
 
-    // attach device
-    UDCON &= ~(1 << DETACH);
 
     // end of reset
-    UDIEN |= (1 << EORSTI | 1 << SOFE);
+    UDIEN |= (1 << EORSTI | 1 << SOFE | 1 << SUSPE);
     
     dev_config_status = 0; // not configured yet
 
@@ -73,18 +95,15 @@ ISR(USB_GEN_vect) {
     // configure EP0
     uint8_t temp_udint = UDINT;
     UDINT = 0;
-
     if(temp_udint & (1 << EORSTI)) {
-        // configure ep0
-        usb_setendpoint_0(0);
-
-        // activating the endpoint
-        UECONX |= (1 << EPEN);
-
-        // configure the direction
-        // configure the endpoint type
-        UECFG0X = 0x00; // OUT (Host -> Device)
-        UECFG1X = (1 << EPSIZE1) | (1 << EPSIZE0) | (1 << ALLOC);
+        
+      
+        /* ======================================================== */
+                            /* Initializing EP0 */
+        
+        init_ep(0);
+        
+        /* ======================================================== */
         
         // check if ep0 is not configured
         if(!(UESTA0X & (1 << CFGOK))) {
@@ -99,14 +118,13 @@ ISR(USB_GEN_vect) {
 /* Endpoint 0 Vector */
 ISR(USB_COM_vect) {
     // Setting Endpoint 0
-    usb_setendpoint_0(0);
+    set_ep(0);
 
     // is setup packet received?
-    if(!usb_setup_packet_recv()) {
+    if(!setup_packet_recv()) {
         return;
     }
 
-    // Read the UEDAT
     SetupPacket sp;
     sp.request_type = UEDATX;
     sp.request = UEDATX;
@@ -124,64 +142,99 @@ ISR(USB_COM_vect) {
     // Reset SETUP, Received OUT, Transmitter Ready interupts
     // RXSTPE, RXOUTI, TXINI,
     // setting the transmit 
-    UEINTX &= ~(1 << RXSTPE | 1 << RXOUTI | 1 << TXINI);
-
-    // check for standard device request
-    // check for SET_ADDRESS and GET_DESCRIPTOR
-    // is it HOST TO DEVICE
-    // 0000 0000
-    if(sp.request_type == DEVICETOHOST) {
-        switch(sp.request) {
-            case SET_ADDRESS:
-            break;
-        }
-    } else if(sp.request_type == DEVICETOHOST) {
-       switch(sp.request) {
-            case GET_DESCRIPTOR:
-                usb_get_descriptor(&sp);
-                break;
-        
-        }
+    UEINTX &= ~((1 << RXSTPI) | (1 << RXOUTI) | (1 << TXINI));
+    
+    if(sp.request_type & REQUEST_DEVICETOHOST) {
+        wait_in();
+    } else {
+        clear_in(); 
     }
+
+    // Handle Standard requests
+    if(REQUEST_STANDARD == (sp.request_type & REQUEST_TYPE)) {
+        if(SET_ADDRESS == sp.request) {
+            wait_in();
+            UDADDR = sp.lb_value | (1 << ADDEN);
+            clear_in();
+            return;
+        } else if(GET_DESCRIPTOR == sp.request) {
+            send_descriptor(&sp);
+            return;
+        } 
+    }
+
+    #if 0
+    if(ok) {
+        clear_in(); 
+    } else {
+        stall();
+    }
+    #endif
 }
 
 /* helper funcs */
-void usb_setendpoint_0(uint8_t data) {
+static void init_ep(uint8_t data) {
     UENUM = data;
+    UECONX |= (1 << EPEN);
+    UECFG0X = 0x00; // OUT (Host -> Device)
+    UECFG1X = 0x32; // 64 bank size
 }
 
-int usb_setup_packet_recv() {
-    return (UEINTX & (1 << RXSTPI));
+static int setup_packet_recv() {
+    return UEINTX & (1 << RXSTPI);
 }
 
-bool usb_get_descriptor(SetupPacket *sp) {
+static bool send_descriptor(SetupPacket *sp) {
     u8 type = sp->hb_value;
+    
     if(type == DEVICE_DESCRIPTOR) {
         u8 *device_addr = (u8 *)&device_descriptor;
         u8 device_length = pgm_read_byte(device_addr);
         
+        u16 length = sp->length;
+        if(length > device_length) length = device_length;
+        
         if(!wait_for_in_or_out()) return false;
-       
-        //TODO: Handle 9.4.3 GET_DESCRIPTOR packet length
-        // If the descriptor is shorter than the wLength field, the
-        // device indicates the end of the control transfer by sending a short packet when further data is requested. A
-        // short packet is defined as a packet shorter than the maximum payload size or a zero length data packet
-       
-        // setting each field of device descriptor to UEDATX 
-        for(i32 i = 0; i < device_length; ++i) {
+        
+        
+        for(i32 i = 0; i < length; ++i) {
             UEDATX = pgm_read_byte(device_addr + i);
         }
-
-        // clear TXINI to send each byte to host
-        UEINTX &= ~(1 << TXINI);
+        
+        clear_in();     
+    
+    } else if(type == CONFIGURATION_DESCRIPTOR) {
+        send_config_descriptor();
     }
-
+    
     return true;
 }
 
 // wait for IN or OUT
 // If RXOUTI has aborted, then clear RXOUTI and return
 static u8 wait_for_in_or_out(void) {
-    while(!(UEINTX & ( (1 << TXINI) | (1 << RXOUTI) )));
+    while(!(UEINTX & ( (1 << TXINI) | (1 << RXOUTI))));
     return (UEINTX & (1 << RXOUTI)) == 0;
+}
+
+static void wait_in() {
+    while (!(UEINTX & (1<<TXINI)));
+}
+
+static void clear_in() {
+    UEINTX &= ~(1 << TXINI);
+}
+
+static void stall() {
+    UECONX |= (1 << STALLRQ) | (1 << EPEN);
+}
+
+static i32 send_config_descriptor() {
+    DescData configuration = {0};
+    
+    return 0;
+}
+
+static void set_ep(u8 data)  {
+    UENUM = data;
 }

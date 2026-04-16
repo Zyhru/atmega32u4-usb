@@ -26,8 +26,11 @@ typedef float f32;
 /* Endpoints */ 
 #define FLASH_EP0_SINGLE_32
 
-#define DEVICETOHOST 0x80
-#define HOSTTODEVICE 0x00
+#define REQUEST_DEVICETOHOST 0x80
+#define REQUEST_HOSTTODEVICE 0x00
+
+#define REQUEST_TYPE 0x60
+#define REQUEST_STANDARD 0x00
 
 /* Standard Device Requests */
 typedef enum {
@@ -37,8 +40,13 @@ typedef enum {
 
 typedef enum { 
     DEVICE_DESCRIPTOR = 0x01,
-    CONFIGURATION_DESCRIPTOR = 0x02,
+    CONFIGURATION_DESCRIPTOR = 0x02
 } Descriptors;
+
+typedef struct {
+    u8 *descriptor;
+    u8 length;
+} DescData;
 
 // HID Device Requests
 
@@ -70,12 +78,27 @@ typedef struct {
 } DeviceDesc;
 
 // configuration descriptor
+typedef struct {
+	u8	len;			// 9
+	u8	dtype;			// 2
+	u16 clen;			// total length
+	u8	num_interfaces;
+	u8	config;
+	u8	iconfig;
+	u8	attributes;
+	u8	max_power;
+} ConfigDesc;
+
 // interface descriptor
+typedef struct {
+
+} InterfaceDesc;
+
 // endpoint descriptor
+typedef struct {
+
+} EndpointDesc;
 
 int usb_init();
-int usb_setup_packet_recv();
-void usb_setendpoint_0(u8 data);
-bool usb_get_descriptor(SetupPacket *sp);
 
 #endif // USB_H

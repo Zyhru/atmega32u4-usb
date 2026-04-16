@@ -5,8 +5,5 @@ int main() {
 
     for(;;) {}
 
-    /* Main Loop */
-    // matrix scanning
-
     return 0;
 }
