@@ -5,6 +5,13 @@
 /* Global Variables */
 uint8_t dev_config_status;
 
+typedef struct {
+    ConfigDesc config;
+    InterfaceDesc interface;
+    HIDDesc hid;
+    EndpointDesc endpoint;
+} FullConfig;
+
 const DeviceDesc device_descriptor PROGMEM = {
     .length = 18,
     .type = 1,
@@ -25,14 +32,55 @@ const DeviceDesc device_descriptor PROGMEM = {
 const ConfigDesc config_descriptor PROGMEM = {
     .len = 9,
     .dtype = 2,
-    .clen = 0,
+    .clen = sizeof(FullConfig),
     .num_interfaces = 1,
     .config = 1,
     .iconfig = 0,
     .attributes = 0x80 | 0x20,
     .max_power = 500/2 
 };
- 
+
+const EndpointDesc endpoint_desc PROGMEM = {
+    .len = 7,
+    .descriptor_type = 0x05,
+    .endpoint_address = ENDPOINT_3 | 0x80, // IN/OUT Interrupt
+    .attributes = 0x03,
+    .max_packet_size = 8,
+    .interval = 0x01,
+};
+
+const HIDDesc hid_descriptor PROGMEM = {
+    .len = 9,
+    .descriptor_type = 0x21,
+    .bcd_hid = 0x0111,
+    .country_code = 0,
+    .num_descriptors = 1,
+    .class_type = 0x22,
+    .descriptor_length = sizeof(ReportDesc),
+};
+
+const InterfaceDesc interface_descriptor PROGMEM = {
+    .len = 9,
+    .descriptor_type = 4,
+    .interface_number = 0,
+    .alternate_setting = 0,
+    .num_endpoints = 1,
+    .interface_class = 0x03,
+    .interface_sub_class = 0x01,
+    .interface_protocol = 0x01,
+    .interface = 0,
+};
+
+const FullConfig config PROGMEM = {
+    .config = config_descriptor,
+    .interface = interface_descriptor,
+    .hid = hid_descriptor,
+    .endpoint = endpoint_desc
+};
+    
+const ReportDesc report PROGMEM = {
+
+};
 
 /* Private Functions */
 static u8 wait_for_in_or_out();
@@ -190,12 +238,10 @@ static bool send_descriptor(SetupPacket *sp) {
     if(type == DEVICE_DESCRIPTOR) {
         u8 *device_addr = (u8 *)&device_descriptor;
         u8 device_length = pgm_read_byte(device_addr);
-        
         u16 length = sp->length;
         if(length > device_length) length = device_length;
         
         if(!wait_for_in_or_out()) return false;
-        
         
         for(i32 i = 0; i < length; ++i) {
             UEDATX = pgm_read_byte(device_addr + i);
@@ -204,7 +250,19 @@ static bool send_descriptor(SetupPacket *sp) {
         clear_in();     
     
     } else if(type == CONFIGURATION_DESCRIPTOR) {
-        send_config_descriptor();
+        u8 *device_addr = (u8 * ) &config;
+        u8 device_length = sizeof(FullConfig);
+        u16 length = sp->length;
+        
+        // truncate
+        if(length > device_length) length = device_length;
+        if(!wait_for_in_or_out()) return false;
+        
+        for(i32 i = 0; i < length; ++i) {
+            UEDATX = pgm_read_byte(device_addr + i);
+        }
+        
+        clear_in();
     }
     
     return true;
@@ -229,10 +287,21 @@ static void stall() {
     UECONX |= (1 << STALLRQ) | (1 << EPEN);
 }
 
-static i32 send_config_descriptor() {
-    DescData configuration = {0};
-    
-    return 0;
+static i32 send_descriptor_data(u16 requested_length, void *data) {
+        u8 *device_addr = (u8 * ) &data;
+        u8 device_length = pgm_read_byte(device_addr);
+        u16 length = requested_length;
+        
+        // truncate
+        if(length > device_length) length = device_length;
+        if(!wait_for_in_or_out()) return 1;
+        
+        for(i32 i = 0; i < length; ++i) {
+            UEDATX = pgm_read_byte(device_addr + i);
+        }
+        
+        clear_in();
+        return 0;
 }
 
 static void set_ep(u8 data)  {

@@ -24,7 +24,10 @@ typedef float f32;
 #define PRODUCT_ID 0x2FF4
 
 /* Endpoints */ 
-#define FLASH_EP0_SINGLE_32
+#define ENDPOINT_3 3 
+#define ENDPOINT_4 4
+#define ENDPOINT_5 5
+#define ENDPOINT_6 6
 
 #define REQUEST_DEVICETOHOST 0x80
 #define REQUEST_HOSTTODEVICE 0x00
@@ -47,8 +50,6 @@ typedef struct {
     u8 *descriptor;
     u8 length;
 } DescData;
-
-// HID Device Requests
 
 /* structs */ 
 typedef struct {
@@ -91,12 +92,46 @@ typedef struct {
 
 // interface descriptor
 typedef struct {
-
+    u8 len;
+    u8 descriptor_type;
+    u8 interface_number;
+    u8 alternate_setting;
+    u8 num_endpoints;
+    u8 interface_class;
+    u8 interface_sub_class;
+    u8 interface_protocol;
+    u8 interface;
 } InterfaceDesc;
+
+// HID Descriptor
+typedef struct {
+	u8 len; // Total size of the HID Descriptor
+	u8 descriptor_type; // name specifying the type of HID descriptor
+	u16 bcd_hid; // Numeric Expression identifying the HID Class
+	u8 country_code; // Country code of localized hardware
+	u8 num_descriptors; // number of class descriptors
+	u8 class_type; // name of type of class descriptor
+	u16 descriptor_length; // Total size of report descriptor
+} HIDDesc;
+
+typedef struct {
+	u8 len; // Total size of the HID Descriptor
+	u8 descriptor_type; // name specifying the type of HID descriptor
+	u16 bcd_hid; // Numeric Expression identifying the HID Class
+	u8 country_code; // Country code of localized hardware
+	u8 num_descriptors; // number of class descriptors
+	u8 class_type; // name of type of class descriptor
+	u16 descriptor_length; // Total size of report descriptor
+} ReportDesc;
 
 // endpoint descriptor
 typedef struct {
-
+    u8 len;
+    u8 descriptor_type;
+    u8 endpoint_address;
+    u8 attributes;
+    u16 max_packet_size;
+    u8 interval;
 } EndpointDesc;
 
 int usb_init();
