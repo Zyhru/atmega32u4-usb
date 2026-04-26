@@ -41,7 +41,7 @@ typedef float f32;
 #define IPRODUCT 2
 #define ISERIALNUMBER 3
 
-#define MANUFACTURER "Zai" 
+#define MANUFACTURER "Zyhru" 
 #define PRODUCT "daoboard" 
 #define SERIALNUMBER "1.0.0" 
 
@@ -54,7 +54,9 @@ typedef enum {
 typedef enum { 
     DEVICE_DESCRIPTOR = 0x01,
     CONFIGURATION_DESCRIPTOR = 0x02,
-    STRING_DESCRIPTOR = 0x03
+    STRING_DESCRIPTOR = 0x03,
+    HID_DESCRIPTOR = 0x21,
+    REPORT_DESCRIPTOR = 0x22,
 } Descriptors;
 
 typedef struct {
@@ -124,16 +126,6 @@ typedef struct {
 	u8 class_type; // name of type of class descriptor
 	u16 descriptor_length; // Total size of report descriptor
 } HIDDesc;
-
-typedef struct {
-	u8 len; // Total size of the HID Descriptor
-	u8 descriptor_type; // name specifying the type of HID descriptor
-	u16 bcd_hid; // Numeric Expression identifying the HID Class
-	u8 country_code; // Country code of localized hardware
-	u8 num_descriptors; // number of class descriptors
-	u8 class_type; // name of type of class descriptor
-	u16 descriptor_length; // Total size of report descriptor
-} ReportDesc;
 
 // endpoint descriptor
 typedef struct {

@@ -16,8 +16,9 @@
         - [ ] handle GET_STATUS
         - [x] handle HID descriptor
 - [x] String Descriptor
-- [ ] Report Descriptor
+- [x] Report Descriptor
 - [ ] Handle GET_REPORT (Learn more about it)
+- [ ] Handle GET/SET_IDLE (Learn more about it)
 
 # Notes
 

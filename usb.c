@@ -1,10 +1,82 @@
 #include "usb.h"
+#include <avr/pgmspace.h>
 
 /* Global Variables */
 uint8_t dev_config_status;
 const u8 manufacturer_string[] PROGMEM = MANUFACTURER; 
 const u8 product_string[] PROGMEM = PRODUCT;
 const u8 serial_string[] PROGMEM = SERIALNUMBER;
+
+const u8 hid_report_descriptor[] PROGMEM = {
+    0x05,
+    0x01,  // Usage Page - Generic Desktop - HID Spec Appendix E E.6 - The
+           // values for the HID tags are not clearly listed anywhere really, so
+           // this table is very useful
+    0x09,
+    0x06,  // Usage - Keyboard
+    0xA1,
+    0x01,  // Collection - Application
+    0x05,
+    0x07,  // Usage Page - Key Codes
+    0x19,
+    0xE0,  // Usage Minimum - The bit that controls the 8 modifier characters
+           // (ctrl, command, etc)
+    0x29,
+    0xE7,  // Usage Maximum - The end of the modifier bit (0xE7 - 0xE0 = 1 byte)
+    0x15,
+    0x00,  // Logical Minimum - These keys are either not pressed or pressed, 0
+           // or 1
+    0x25,
+    0x01,  // Logical Maximum - Pressed state == 1
+    0x75,
+    0x01,  // Report Size - The size of the IN report to the host
+    0x95,
+    0x08,  // Report Count - The number of keys in the report
+    0x81,
+    0x02,  // Input - These are variable inputs
+    0x95,
+    0x01,  // Report Count - 1
+    0x75,
+    0x08,  // Report Size - 8
+    0x81,
+    0x01,  // This byte is reserved according to the spec
+    0x95,
+    0x05,  // Report Count - This is for the keyboard LEDs
+    0x75,
+    0x01,  // Report Size
+    0x05,
+    0x08,  // Usage Page for LEDs
+    0x19,
+    0x01,  // Usage minimum for LEDs
+    0x29,
+    0x05,  // Usage maximum for LEDs
+    0x91,
+    0x02,  // Output - This is for a host output to the keyboard for the status
+           // of the LEDs
+    0x95,
+    0x01,  // Padding for the report so that it is at least 1 byte
+    0x75,
+    0x03,  // Padding
+    0x91,
+    0x01,  // Output - Constant for padding
+    0x95,
+    0x06,  // Report Count - For the keys
+    0x75,
+    0x08,  // Report Size - For the keys
+    0x15,
+    0x00,  // Logical Minimum
+    0x25,
+    0x65,  // Logical Maximum
+    0x05,
+    0x07,  // Usage Page - Key Codes
+    0x19,
+    0x00,  // Usage Minimum - 0
+    0x29,
+    0x65,  // Usage Maximum - 101
+    0x81,
+    0x00,  // Input - Data, Array
+    0xC0   // End collection
+};
 
 const DeviceDesc device_descriptor PROGMEM = {
     .length = 18,
@@ -50,7 +122,7 @@ const HIDDesc hid_descriptor PROGMEM = {
     .country_code = 0,
     .num_descriptors = 1,
     .class_type = 0x22,
-    .descriptor_length = sizeof(ReportDesc),
+    .descriptor_length = sizeof(hid_report_descriptor),
 };
 
 const InterfaceDesc interface_descriptor PROGMEM = {
@@ -76,10 +148,6 @@ const StringZeroDesc s_zero PROGMEM = {
     .len = 4,
     .type = 3,
     .lang_id = 0x0409 // US Lang
-};
-    
-const ReportDesc report PROGMEM = {
-
 };
 
 /* Private Functions */
@@ -211,14 +279,6 @@ ISR(USB_COM_vect) {
             return;
         } 
     }
-
-    #if 0
-    if(ok) {
-        clear_in(); 
-    } else {
-        stall();
-    }
-    #endif
 }
 
 /* helper funcs */
@@ -259,6 +319,16 @@ static bool send_descriptor(SetupPacket *sp) {
         } else if(sp->lb_value == ISERIALNUMBER) {
             _send_string_descriptor(strlen(SERIALNUMBER), serial_string);
         }
+    } else if(type == REPORT_DESCRIPTOR) {
+        u8 *device_addr = hid_report_descriptor;
+        u8 device_length = sizeof(hid_report_descriptor);
+        u16 length = sp->length;
+        if(!_send(length, device_length, device_addr)) return false;
+    } else if(type == HID_DESCRIPTOR) {
+        u8 *device_addr = (u8 *)&hid_descriptor;
+        u8 device_length = pgm_read_byte(device_addr);
+        u16 length = sp->length;
+        if(!_send(length, device_length, device_addr)) return false;
     }
     
     return true;
