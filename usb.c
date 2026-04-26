@@ -1,16 +1,10 @@
 #include "usb.h"
-#include <avr/io.h>
-#include <avr/pgmspace.h>
 
 /* Global Variables */
 uint8_t dev_config_status;
-
-typedef struct {
-    ConfigDesc config;
-    InterfaceDesc interface;
-    HIDDesc hid;
-    EndpointDesc endpoint;
-} FullConfig;
+const u8 manufacturer_string[] PROGMEM = MANUFACTURER; 
+const u8 product_string[] PROGMEM = PRODUCT;
+const u8 serial_string[] PROGMEM = SERIALNUMBER;
 
 const DeviceDesc device_descriptor PROGMEM = {
     .length = 18,
@@ -23,9 +17,9 @@ const DeviceDesc device_descriptor PROGMEM = {
     .vendor_id = VENDOR_ID,
     .product_id = PRODUCT_ID,
     .bcd_device = 0x01,
-    .manufacturer = 0,
-    .product = 0,
-    .serial_number = 0,
+    .manufacturer = 1,
+    .product = 2,
+    .serial_number = 3,
     .num_configurations = 1
 };
 
@@ -77,6 +71,12 @@ const FullConfig config PROGMEM = {
     .hid = hid_descriptor,
     .endpoint = endpoint_desc
 };
+
+const StringZeroDesc s_zero PROGMEM = {
+    .len = 4,
+    .type = 3,
+    .lang_id = 0x0409 // US Lang
+};
     
 const ReportDesc report PROGMEM = {
 
@@ -87,11 +87,13 @@ static u8 wait_for_in_or_out();
 static void wait_in();
 static void clear_in();
 static void stall();
-static i32 send_config_descriptor();
 static int setup_packet_recv();
 static void set_ep(u8 data);
 static void init_ep(u8 data);
 static bool send_descriptor(SetupPacket *sp);
+static bool send8(u8 data);
+static bool _send(u16 req_len, u8 dev_len, u8 *addr); // i'll rename this later?
+static bool _send_string_descriptor(u8 str_len, const u8 *string);
 
 // Steps
 // 1. Enable USB Pad Regulator (for power)
@@ -111,7 +113,6 @@ int usb_init() {
 
     // setting clock source to 16MHz
     // enabling PLL
-    //PLLCSR |= (1 << PINDIV | 1 << PLLE);
     PLLCSR |= (1 << PINDIV);
     PLLCSR |= (1 << PLLE);
 
@@ -239,30 +240,25 @@ static bool send_descriptor(SetupPacket *sp) {
         u8 *device_addr = (u8 *)&device_descriptor;
         u8 device_length = pgm_read_byte(device_addr);
         u16 length = sp->length;
-        if(length > device_length) length = device_length;
-        
-        if(!wait_for_in_or_out()) return false;
-        
-        for(i32 i = 0; i < length; ++i) {
-            UEDATX = pgm_read_byte(device_addr + i);
-        }
-        
-        clear_in();     
-    
+        if(!_send(length, device_length, device_addr)) return false;
     } else if(type == CONFIGURATION_DESCRIPTOR) {
         u8 *device_addr = (u8 * ) &config;
         u8 device_length = sizeof(FullConfig);
         u16 length = sp->length;
-        
-        // truncate
-        if(length > device_length) length = device_length;
-        if(!wait_for_in_or_out()) return false;
-        
-        for(i32 i = 0; i < length; ++i) {
-            UEDATX = pgm_read_byte(device_addr + i);
+        if(!_send(length, device_length, device_addr)) return false;
+    } else if(type == STRING_DESCRIPTOR) {
+        if(sp->lb_value == 0) {
+            u8 *device_addr = (u8 *)&s_zero;
+            u8 device_length = pgm_read_byte(device_addr);
+            u16 length = sp->length;
+            if(!_send(length, device_length, device_addr)) return false;
+        } else if(sp->lb_value == IMANUFACTURER) {
+            _send_string_descriptor(strlen(MANUFACTURER), manufacturer_string);
+        } else if(sp->lb_value == IPRODUCT) {
+            _send_string_descriptor(strlen(PRODUCT), product_string);
+        } else if(sp->lb_value == ISERIALNUMBER) {
+            _send_string_descriptor(strlen(SERIALNUMBER), serial_string);
         }
-        
-        clear_in();
     }
     
     return true;
@@ -287,23 +283,48 @@ static void stall() {
     UECONX |= (1 << STALLRQ) | (1 << EPEN);
 }
 
-static i32 send_descriptor_data(u16 requested_length, void *data) {
-        u8 *device_addr = (u8 * ) &data;
-        u8 device_length = pgm_read_byte(device_addr);
-        u16 length = requested_length;
-        
-        // truncate
-        if(length > device_length) length = device_length;
-        if(!wait_for_in_or_out()) return 1;
-        
-        for(i32 i = 0; i < length; ++i) {
-            UEDATX = pgm_read_byte(device_addr + i);
-        }
-        
-        clear_in();
-        return 0;
-}
-
 static void set_ep(u8 data)  {
     UENUM = data;
+}
+
+// NOTE: sending function sufficient because I set the bank size to 64, so realistically
+// I'll never send data that is more than 64. Essentially, it's okay for the CONTROL endpoint
+// Will def have to probably create a new send function when the host is actively polling for GET_REPORT
+static bool _send(u16 req_len, u8 dev_len, u8 *addr) {
+    if(req_len > dev_len) req_len = dev_len;
+    if(!wait_for_in_or_out()) return false;
+        
+    for(i32 i = 0; i < req_len; ++i) {
+        UEDATX = pgm_read_byte(addr + i);
+    }
+        
+    clear_in();     
+    return true;
+}
+
+/*
+* Send bLength
+* Send bDescriptorType
+* Send UNICODE String -> Example: 'z','0','a','0','i','0'
+*/
+static bool _send_string_descriptor(u8 str_len, const u8 *string) {
+    u8 length = (2 + str_len * 2);
+    send8(length);
+    send8(3);
+
+    for(u8 i = 0; i < str_len; ++i) {
+        u8 char_len = pgm_read_byte(&string[i]);
+        bool ok = send8(char_len);
+        ok &= send8(0);
+        if(!ok) return false;
+    }
+    
+    clear_in();
+    return true;
+}
+
+static bool send8(u8 data) {
+    if(!wait_for_in_or_out()) return false;
+    UEDATX = data;
+    return true;
 }

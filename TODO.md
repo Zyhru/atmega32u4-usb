@@ -1,6 +1,6 @@
 # TODO
 
-- [ ] usb_init
+- [x] usb_init
     - [x] PLL Lock (48MHz)
     - [x] Reset bus
     - [x] Full Speed 
@@ -9,13 +9,15 @@
     - [x] Attach USB controller
 - [x] setup EP0
 - address setup
-    - [ ] enumeration
+    - [x] enumeration
         - [x] handle GET_DESCRIPTOR
         - [x] handle SET_ADDRESS 
-        - [ ] handle SET_CONFIGURATION 
+        - [x] handle SET_CONFIGURATION 
         - [ ] handle GET_STATUS
-        - [ ] handle HID descriptor
-
+        - [x] handle HID descriptor
+- [x] String Descriptor
+- [ ] Report Descriptor
+- [ ] Handle GET_REPORT (Learn more about it)
 
 # Notes
 

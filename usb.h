@@ -6,6 +6,7 @@
 #include <avr/pgmspace.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -35,6 +36,15 @@ typedef float f32;
 #define REQUEST_TYPE 0x60
 #define REQUEST_STANDARD 0x00
 
+/* String Shit */
+#define IMANUFACTURER 1
+#define IPRODUCT 2
+#define ISERIALNUMBER 3
+
+#define MANUFACTURER "Zai" 
+#define PRODUCT "daoboard" 
+#define SERIALNUMBER "1.0.0" 
+
 /* Standard Device Requests */
 typedef enum {
     SET_ADDRESS = 0x05,
@@ -43,7 +53,8 @@ typedef enum {
 
 typedef enum { 
     DEVICE_DESCRIPTOR = 0x01,
-    CONFIGURATION_DESCRIPTOR = 0x02
+    CONFIGURATION_DESCRIPTOR = 0x02,
+    STRING_DESCRIPTOR = 0x03
 } Descriptors;
 
 typedef struct {
@@ -133,6 +144,19 @@ typedef struct {
     u16 max_packet_size;
     u8 interval;
 } EndpointDesc;
+
+typedef struct {
+    u8 len;
+    u8 type;
+    u16 lang_id;
+} StringZeroDesc; 
+
+typedef struct {
+    ConfigDesc config;
+    InterfaceDesc interface;
+    HIDDesc hid;
+    EndpointDesc endpoint;
+} FullConfig;
 
 int usb_init();
 
